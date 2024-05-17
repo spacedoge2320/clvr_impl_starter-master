@@ -20,7 +20,7 @@ import algorithms.PPO_algo as PPO_algo
 
 # Check if the MPS (Metal Performance Shaders) backend is available
 if torch.backends.mps.is_available():
-    device = torch.device('cpu')
+    device = torch.device('mps')
     print("MPS is available")
 else:
     device = torch.device('cpu')
@@ -40,8 +40,8 @@ def main():
     seed = 1242
     log_dir = 'logs'
     save_dir = 'model_weights'
-    save_interval = 1000
-    log_interval = 1000
+    save_interval = 100
+    log_interval = 1
     algo = 'PPO'
     use_gae = False
     gae_lambda = 0.95
@@ -70,11 +70,12 @@ def main():
         agent = PPO_algo.PPO(
             actor_critic=actor_critic,
             clip_param=clip_param,
-            ppo_epoch=None,
+            ppo_epoch=4,
             num_mini_batch=num_mini_batch,
             entropy_coef=entropy_coef,
             value_loss_coef=0.5,
             lr=lr,
+            max_grad_norm=0.5
             )
 
     rollouts = RolloutStorage(num_steps, num_processes,
@@ -97,8 +98,8 @@ def main():
             # Sample actions
             with torch.no_grad():
                 value, action, action_log_prob, recurrent_hidden_states = actor_critic.act(
-                    rollouts.obs[step], rollouts.recurrent_hidden_states[step],
-                    rollouts.masks[step])
+                    rollouts.obs[step].to(device), rollouts.recurrent_hidden_states[step].to(device),
+                    rollouts.masks[step].to(device))
 
         obs, reward, done, infos = envs.step(action)  # 액션 수행 및 결과 받기
 
@@ -116,11 +117,7 @@ def main():
             action_log_prob, value, reward, masks, bad_masks)
         
         
-        print(obs.shape)
-        #observation_resized = cv2.resize(observation, (500, 500))
-        #cv2.imshow('Environment', observation_resized)
-        #cv2.waitKey(1)
-        #time.sleep(0.5)
+        #print(obs.shape)
         
     with torch.no_grad():
         next_value = actor_critic.get_value(
@@ -158,6 +155,17 @@ def main():
                     np.median(episode_rewards), np.min(episode_rewards),
                     np.max(episode_rewards), dist_entropy, value_loss,
                     action_loss))
+        
+        obs_copy = obs.cpu().clone().detach().numpy()
+        image = None
+        for i in range (obs_copy.shape[0]):
+            observation_resized = cv2.resize(obs_copy[0,0,:,:], (500, 500))
+            if image is None:
+                image = observation_resized
+            else:
+                image = np.hstack((image, observation_resized))
+        cv2.imshow('Environment', image)
+        cv2.waitKey(1)
 
     if (eval_interval is not None and len(episode_rewards) > 1
             and j % eval_interval == 0):

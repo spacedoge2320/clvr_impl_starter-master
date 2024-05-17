@@ -33,9 +33,6 @@ class Policy(nn.Module):
         elif action_space.__class__.__name__ == "Box":
             num_outputs = action_space.shape[0]
             self.dist = DiagGaussian(self.base.output_size, num_outputs)
-        elif action_space.__class__.__name__ == "MultiBinary":
-            num_outputs = action_space.shape[0]
-            self.dist = Bernoulli(self.base.output_size, num_outputs)
         else:
             raise NotImplementedError
 
@@ -167,17 +164,18 @@ class NNBase(nn.Module):
 
 
 class CNNBase(NNBase):
-    def __init__(self, num_inputs, recurrent=False, hidden_size=512):
+    def __init__(self, num_inputs, recurrent=False, hidden_size=64):
         super(CNNBase, self).__init__(recurrent, hidden_size, hidden_size)
 
         init_ = lambda m: init(m, nn.init.orthogonal_, lambda x: nn.init.
                                constant_(x, 0), nn.init.calculate_gain('relu'))
 
-        self.main = nn.Sequential(
-            init_(nn.Conv2d(num_inputs, 32, 8, stride=4)), nn.ReLU(),
-            init_(nn.Conv2d(32, 64, 4, stride=2)), nn.ReLU(),
-            init_(nn.Conv2d(64, 32, 3, stride=1)), nn.ReLU(), Flatten(),
-            init_(nn.Linear(32 * 7 * 7, hidden_size)), nn.ReLU())
+        self.conv1 = nn.Conv2d(1, 4, kernel_size=4, stride=2, padding=1)
+        self.conv2 = nn.Conv2d(4, 8, kernel_size=4, stride=2, padding=1)
+        self.conv3 = nn.Conv2d(8, 16, kernel_size=4, stride=2, padding=1)
+        self.conv4 = nn.Conv2d(16, 32, kernel_size=4, stride=2, padding=1)
+        self.conv5 = nn.Conv2d(32, 64, kernel_size=4, stride=1, padding=0)
+        self.fc = nn.Linear(64, 64)
 
         init_ = lambda m: init(m, nn.init.orthogonal_, lambda x: nn.init.
                                constant_(x, 0))
@@ -187,10 +185,15 @@ class CNNBase(NNBase):
         self.train()
 
     def forward(self, inputs, rnn_hxs, masks):
-        x = self.main(inputs / 255.0)
-
-        if self.is_recurrent:
-            x, rnn_hxs = self._forward_gru(x, rnn_hxs, masks)
+        #print(inputs.shape)
+        x = inputs/255
+        x = torch.relu(self.conv1(x))
+        x = torch.relu(self.conv2(x))
+        x = torch.relu(self.conv3(x))
+        x = torch.relu(self.conv4(x))
+        x = torch.relu(self.conv5(x))
+        x = x.view(x.size(0), -1)
+        x = self.fc(x)
 
         return self.critic_linear(x), x, rnn_hxs
 

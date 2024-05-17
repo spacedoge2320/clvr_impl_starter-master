@@ -5,6 +5,7 @@ import cv2
 import os
 from general_utils import AttrDict
 from sprites_datagen.utils.template_blender import TemplateBlender
+import logging
 
 
 class SpritesEnv(gym.Env):
@@ -39,9 +40,9 @@ class SpritesEnv(gym.Env):
         self._shape_sprites = self._get_shape_sprites()  # generate geometric shape templates
         self._template_blender = TemplateBlender((self.resolution, self.resolution))
 
-        self.observation_space = Box(low=0.0, high=1.0,
-                shape=(self.resolution, self.resolution,1),
-                dtype=np.float32)
+        self.observation_space = Box(low=0, high=255,
+                shape=(1, self.resolution, self.resolution),
+                dtype=np.uint8)
 
         self.action_space = Box(low=-1.0, high=1.0,
                 shape=(2,),
@@ -69,9 +70,9 @@ class SpritesEnv(gym.Env):
         self.follow = self._spec.follow
         self.repel = not self.follow
 
-        self.observation_space = Box(low=0.0, high=1.0,
-                shape=(self.resolution, self.resolution,1),
-                dtype=np.float32)
+        self.observation_space = Box(low=0, high=255,
+                shape=(1, self.resolution, self.resolution),
+                dtype=np.uint8)
 
     def _clip(self, state):
         return np.clip(state, self._bounds[:, 0], self._bounds[:, 1])
@@ -99,7 +100,7 @@ class SpritesEnv(gym.Env):
         state = self._clip(self._forward(state))
         return state[:, :self._n_dim].copy(), state
 
-    def reset(self):
+    def reset(self,seed=None, **kwargs):
         self.ep_len = 0
         self.distractor_shape_idx_list = np.random.choice(np.arange(2, len(self.SHAPES)), size=self.n_distractors)
         self.all_idxs = np.array(self.base_shape_idx_list + list(self.distractor_shape_idx_list))
@@ -114,8 +115,8 @@ class SpritesEnv(gym.Env):
 
             state = min_value + state * span
         pos_state, self._state = self.forward(state)
-        im = self._render(np.expand_dims(pos_state, 0), self.shapes).squeeze(0)
-        return im / 255
+        im = self._render(np.expand_dims(pos_state, 0), self.shapes)
+        return im, {}
 
     def seed(self, seed=None):
         np.random.seed(seed)
@@ -127,14 +128,15 @@ class SpritesEnv(gym.Env):
         pos_state, self._state = self.forward(state)
 
         im = self._render(np.expand_dims(pos_state, 0), self.shapes)
-        print(im.shape)
+        #print(im.shape)
         reward = self._reward(self._state)
 
         self.ep_len += 1
         done = (self.ep_len >= self.max_ep_len)
         info = {}
+        truncated = False
 
-        return im / 255, reward, done, info
+        return im, reward, done, truncated, info
 
     def _reward(self, state):
         agent_pos = state[0, :2]
@@ -147,11 +149,18 @@ class SpritesEnv(gym.Env):
 
     def _render(self, trajectories, shapes):
         sprites = [self._shape_sprites[shape] for shape in shapes]
-        return self._template_blender.create((trajectories * (self.resolution - 1)).astype(int), sprites)
+        image = self._template_blender.create((trajectories * (self.resolution - 1)).astype(int), sprites)
+        image = image.astype(np.uint8)
+        #print(image.shape)
+        #image = np.squeeze(image, axis=0)
+        #print(image.shape)
+        #image = np.expand_dims(image, axis=2)
+        #print(image.shape)
+        return image
 
     def render(self, mode='rgb_array'):
         pos_state = self._state[:, :self._n_dim].copy()
-        im = self._render(np.expand_dims(pos_state, 0), self.shapes).squeeze(0)
+        im = self._render(np.expand_dims(pos_state, 0), self.shapes)
         return im
 
     def _get_shape_sprites(self):
