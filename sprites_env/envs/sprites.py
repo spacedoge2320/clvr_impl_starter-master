@@ -110,6 +110,7 @@ class SpritesEnv(gym.Env):
             min_value = self._bounds[np.newaxis, :, 0]
             max_value = self._bounds[np.newaxis, :, 1]
             span = max_value - min_value
+            #hi
 
             state = min_value + state * span
         pos_state, self._state = self.forward(state)
