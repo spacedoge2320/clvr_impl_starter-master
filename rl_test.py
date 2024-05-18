@@ -17,11 +17,13 @@ from model import Policy
 from storage import RolloutStorage
 import algorithms.PPO_algo as PPO_algo
 
-
 # Check if the MPS (Metal Performance Shaders) backend is available
 if torch.backends.mps.is_available():
     device = torch.device('mps')
     print("MPS is available")
+elif torch.cuda.is_available():
+    device = torch.device('cuda:0')
+    print("CUDA is available")
 else:
     device = torch.device('cpu')
     print("MPS is not available")
@@ -29,7 +31,7 @@ else:
 
 def main():
     num_env_steps = 1000000
-    num_steps = 128
+    num_steps = 40
     num_processes = 8
     num_mini_batch = 4
     clip_param = 0.1
@@ -41,7 +43,7 @@ def main():
     log_dir = 'logs'
     save_dir = 'model_weights'
     save_interval = 100
-    log_interval = 1
+    log_interval = 100
     algo = 'PPO'
     use_gae = False
     gae_lambda = 0.95
@@ -75,7 +77,8 @@ def main():
             entropy_coef=entropy_coef,
             value_loss_coef=0.5,
             lr=lr,
-            max_grad_norm=0.5
+            max_grad_norm=0.5,
+            eps=1e-5
             )
 
     rollouts = RolloutStorage(num_steps, num_processes,
@@ -88,7 +91,8 @@ def main():
     episode_rewards = deque(maxlen=10)
 
     obs = envs.reset()
-
+    rollouts.obs[0].copy_(obs)
+    rollouts.to(device)
     start = time.time()
     num_updates = int(
         num_env_steps) // num_steps // num_processes
@@ -116,62 +120,64 @@ def main():
         rollouts.insert(obs, recurrent_hidden_states, action,
             action_log_prob, value, reward, masks, bad_masks)
         
-        
-        #print(obs.shape)
-        
-    with torch.no_grad():
-        next_value = actor_critic.get_value(
-        rollouts.obs[-1], rollouts.recurrent_hidden_states[-1],
-        rollouts.masks[-1]).detach()
-
-    rollouts.compute_returns(next_value, use_gae, gamma,
-                                 gae_lambda, use_proper_time_limits)
-    
-    value_loss, action_loss, dist_entropy = agent.update(rollouts)
-    rollouts.after_update()
-
-    # save for every interval-th episode or for the last epoch
-    if (j % save_interval == 0
-            or j == num_updates - 1) and save_dir != "":
-        save_path = os.path.join(save_dir, algo)
-        try:
-            os.makedirs(save_path)
-        except OSError:
-            pass
-
-        torch.save([
-            actor_critic,
-            getattr(utils.get_vec_normalize(envs), 'obs_rms', None)
-        ], os.path.join(save_path, env_name + ".pt"))
-
-    if j % log_interval == 0 and len(episode_rewards) > 1:
-        total_num_steps = (j + 1) * num_processes * num_steps
-        end = time.time()
-        print(
-            "Updates {}, num timesteps {}, FPS {} \n Last {} training episodes: mean/median reward {:.1f}/{:.1f}, min/max reward {:.1f}/{:.1f}\n"
-            .format(j, total_num_steps,
-                    int(total_num_steps / (end - start)),
-                    len(episode_rewards), np.mean(episode_rewards),
-                    np.median(episode_rewards), np.min(episode_rewards),
-                    np.max(episode_rewards), dist_entropy, value_loss,
-                    action_loss))
-        
         obs_copy = obs.cpu().clone().detach().numpy()
         image = None
         for i in range (obs_copy.shape[0]):
-            observation_resized = cv2.resize(obs_copy[0,0,:,:], (500, 500))
+            observation_resized = cv2.resize(obs_copy[0,0,:,:], (200, 200))
             if image is None:
                 image = observation_resized
             else:
                 image = np.hstack((image, observation_resized))
         cv2.imshow('Environment', image)
         cv2.waitKey(1)
+        
+        
+        #print(f"sequence: {j}")
+        
+        with torch.no_grad():
+            next_value = actor_critic.get_value(
+            rollouts.obs[-1].to(device), rollouts.recurrent_hidden_states[-1].to(device),
+            rollouts.masks[-1].to(device)).detach()
 
-    if (eval_interval is not None and len(episode_rewards) > 1
-            and j % eval_interval == 0):
-        obs_rms = utils.get_vec_normalize(envs).obs_rms
-        evaluate(actor_critic, obs_rms, env_name, seed,
-                num_processes, eval_log_dir, device)
+        rollouts.compute_returns(next_value, use_gae, gamma,
+                                    gae_lambda, use_proper_time_limits)
+        
+        value_loss, action_loss, dist_entropy = agent.update(rollouts)
+        rollouts.after_update()
+
+        # save for every interval-th episode or for the last epoch
+        if (j % save_interval == 0
+                or j == num_updates - 1) and save_dir != "":
+            save_path = os.path.join(save_dir, algo)
+            try:
+                os.makedirs(save_path)
+            except OSError:
+                pass
+
+            torch.save([
+                actor_critic,
+                getattr(utils.get_vec_normalize(envs), 'obs_rms', None)
+            ], os.path.join(save_path, env_name + ".pt"))
+
+        if j % log_interval == 0 and len(episode_rewards) > 1:
+            total_num_steps = (j + 1) * num_processes * num_steps
+            end = time.time()
+            print(
+                "Updates {}, num timesteps {}, FPS {} \n Last {} training episodes: mean/median reward {:.1f}/{:.1f}, min/max reward {:.1f}/{:.1f}\n"
+                .format(j, total_num_steps,
+                        int(total_num_steps / (end - start)),
+                        len(episode_rewards), np.mean(episode_rewards),
+                        np.median(episode_rewards), np.min(episode_rewards),
+                        np.max(episode_rewards), dist_entropy, value_loss,
+                        action_loss))
+            
+
+
+        if (eval_interval is not None and len(episode_rewards) > 1
+                and j % eval_interval == 0):
+            obs_rms = utils.get_vec_normalize(envs).obs_rms
+            evaluate(actor_critic, obs_rms, env_name, seed,
+                    num_processes, eval_log_dir, device)
 
 
 if __name__ == '__main__':

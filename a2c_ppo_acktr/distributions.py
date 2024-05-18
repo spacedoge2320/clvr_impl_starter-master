@@ -92,6 +92,7 @@ class DiagGaussian(nn.Module):
             zeros = zeros.cuda()
 
         action_logstd = self.logstd(zeros)
+        action_logstd = action_logstd.clamp(min=0, max=2)
         return FixedNormal(action_mean, action_logstd.exp())
 
 

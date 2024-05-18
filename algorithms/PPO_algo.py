@@ -13,6 +13,7 @@ class PPO():
                  value_loss_coef,
                  entropy_coef,
                  lr=None,
+                 eps=None,
                  max_grad_norm=None,
                  use_clipped_value_loss=True):
 
@@ -28,7 +29,7 @@ class PPO():
         self.max_grad_norm = max_grad_norm
         self.use_clipped_value_loss = use_clipped_value_loss
 
-        self.optimizer = optim.Adam(actor_critic.parameters(), lr=lr)
+        self.optimizer = optim.Adam(actor_critic.parameters(), lr=lr, eps=eps)
 
     def update(self, rollouts):
         advantages = rollouts.returns[:-1] - rollouts.value_preds[:-1]
@@ -76,6 +77,7 @@ class PPO():
                     value_loss = 0.5 * (return_batch - values).pow(2).mean()
 
                 self.optimizer.zero_grad()
+                print(f"devices: {obs_batch.device}, {recurrent_hidden_states_batch.device}, {actions_batch.device}, {value_preds_batch.device}, {return_batch.device}, {adv_targ.device}, {old_action_log_probs_batch.device}")
                 (value_loss * self.value_loss_coef + action_loss -
                  dist_entropy * self.entropy_coef).backward()
                 nn.utils.clip_grad_norm_(self.actor_critic.parameters(),
