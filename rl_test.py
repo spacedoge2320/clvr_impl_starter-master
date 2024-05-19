@@ -17,6 +17,11 @@ from model import Policy
 from storage import RolloutStorage
 import algorithms.PPO_algo as PPO_algo
 
+print(torch.__version__)
+print(torch.cuda.is_available())
+print(torch.version.cuda)
+print(torch.backends.cudnn.version())
+
 # Check if the MPS (Metal Performance Shaders) backend is available
 if torch.backends.mps.is_available():
     device = torch.device('mps')
