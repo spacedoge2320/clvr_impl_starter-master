@@ -17,11 +17,6 @@ from model import Policy
 from storage import RolloutStorage
 import algorithms.PPO_algo as PPO_algo
 
-print(torch.__version__)
-print(torch.cuda.is_available())
-print(torch.version.cuda)
-print(torch.backends.cudnn.version())
-
 # Check if the MPS (Metal Performance Shaders) backend is available
 if torch.backends.mps.is_available():
     device = torch.device('mps')
@@ -35,7 +30,7 @@ else:
 
 
 def main():
-    num_env_steps = 1000000
+    num_env_steps = 5000000
     num_steps = 40
     num_processes = 8
     num_mini_batch = 4
@@ -43,7 +38,7 @@ def main():
     lr = 2.5e-4
     use_linear_lr_decay = True
     entropy_coef = 0.01
-    env_name = 'Sprites-v1'
+    env_name = 'Sprites-v0'
     seed = 1242
     log_dir = 'logs'
     save_dir = 'model_weights'
@@ -54,7 +49,7 @@ def main():
     gae_lambda = 0.95
     gamma = 0.99
     use_proper_time_limits = False
-    eval_interval = 10000
+    eval_interval = 100
     recurrent_policy = False
 
     log_dir = os.path.expanduser(log_dir)
@@ -125,17 +120,6 @@ def main():
         rollouts.insert(obs, recurrent_hidden_states, action,
             action_log_prob, value, reward, masks, bad_masks)
         
-        obs_copy = obs.cpu().clone().detach().numpy()
-        image = None
-        for i in range (obs_copy.shape[0]):
-            observation_resized = cv2.resize(obs_copy[0,0,:,:], (200, 200))
-            if image is None:
-                image = observation_resized
-            else:
-                image = np.hstack((image, observation_resized))
-        cv2.imshow('Environment', image)
-        cv2.waitKey(1)
-        
         
         #print(f"sequence: {j}")
         
@@ -158,6 +142,7 @@ def main():
                 os.makedirs(save_path)
             except OSError:
                 pass
+            #print(envs)
 
             torch.save([
                 actor_critic,
@@ -176,12 +161,26 @@ def main():
                         np.max(episode_rewards), dist_entropy, value_loss,
                         action_loss))
             
+            if obs.shape[2] == 64:
+                for i in range(len(rollouts.obs)):
+                    obs_copy = rollouts.obs[i].cpu().clone().detach().numpy()
+                    image = None
+                    for i in range (obs_copy.shape[0]):
+                        observation_resized = cv2.resize(obs_copy[0,0,:,:], (200, 200))
+                        if image is None:
+                            image = observation_resized
+                        else:
+                            image = np.hstack((image, observation_resized))
+                    cv2.imshow('Environment', image)
+                    cv2.waitKey(1)
+                    time.sleep(0.05)
+                cv2.destroyAllWindows()
+            
 
 
         if (eval_interval is not None and len(episode_rewards) > 1
                 and j % eval_interval == 0):
-            obs_rms = utils.get_vec_normalize(envs).obs_rms
-            evaluate(actor_critic, obs_rms, env_name, seed,
+            evaluate(actor_critic, None, env_name, seed,
                     num_processes, eval_log_dir, device)
 
 

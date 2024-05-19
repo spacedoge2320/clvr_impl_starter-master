@@ -10,6 +10,8 @@ import glob
 from stable_baselines3.common.vec_env.vec_normalize import \
     VecNormalize as VecNormalize_
 
+import numpy as np
+
 def make_env(env_id, rank, log_dir, allow_early_resets):
     def _thunk():
         env = gym.make(env_id)
@@ -21,6 +23,7 @@ def make_env(env_id, rank, log_dir, allow_early_resets):
     return _thunk
 
 def get_vec_normalize(venv):
+    #print(venv)
     if isinstance(venv, VecNormalize):
         return venv
     elif hasattr(venv, 'venv'):

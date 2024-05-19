@@ -186,6 +186,7 @@ class CNNBase(NNBase):
 
     def forward(self, inputs, rnn_hxs, masks):
         #print(inputs.shape)
+        #print(f"devices: {inputs.device}, {rnn_hxs.device}, {masks.device}")
         x = inputs/255
         x = torch.relu(self.conv1(x))
         x = torch.relu(self.conv2(x))

@@ -116,6 +116,7 @@ class SpritesEnv(gym.Env):
             state = min_value + state * span
         pos_state, self._state = self.forward(state)
         im = self._render(np.expand_dims(pos_state, 0), self.shapes)
+        #print(im.shape)
         return im, {}
 
     def seed(self, seed=None):
@@ -190,21 +191,21 @@ class SpritesStateEnv(SpritesEnv):
         # only return pos_state
         self.observation_space = Box(low=0.0, high=1.0,
                 shape=((self.n_distractors + 2) * self._n_dim, ),
-                dtype=np.float32)
+                dtype=np.float64)
 
     def set_config(self, spec):
         super().set_config(spec)
         self.observation_space = Box(low=0.0, high=1.0,
                 shape=((self.n_distractors + 2) * self._n_dim, ),
-                dtype=np.float32)
+                dtype=np.float64)
 
-    def reset(self):
+    def reset(self,seed=None, **kwargs):
         super().reset()
-        return self._state[:, :self._n_dim].copy().flatten()
+        return self._state[:, :self._n_dim].copy().flatten(), {}
 
     def step(self, action):
-        _, reward, done, info = super().step(action)
-        return self._state[:, :self._n_dim].copy().flatten(), reward, done, info
+        _, reward, done, Truncated, info = super().step(action)
+        return self._state[:, :self._n_dim].copy().flatten(), reward, done, Truncated, info
 
 
 class SpritesRepelEnv(SpritesEnv):

@@ -77,7 +77,9 @@ class PPO():
                     value_loss = 0.5 * (return_batch - values).pow(2).mean()
 
                 self.optimizer.zero_grad()
-                print(f"devices: {obs_batch.device}, {recurrent_hidden_states_batch.device}, {actions_batch.device}, {value_preds_batch.device}, {return_batch.device}, {adv_targ.device}, {old_action_log_probs_batch.device}")
+
+                #print(f"devices: {value_loss.device}, {action_loss.device}, {dist_entropy.device}")
+                
                 (value_loss * self.value_loss_coef + action_loss -
                  dist_entropy * self.entropy_coef).backward()
                 nn.utils.clip_grad_norm_(self.actor_critic.parameters(),
