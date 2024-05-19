@@ -232,6 +232,7 @@ if __name__ == '__main__':
         torch.save({
         'epoch': epoch,
         'model_state_dict': model.state_dict(),
+        'encoder_state_dict': model.encoder.state_dict(),
         'decoder_state_dict': decoder.state_dict(),
         'model_optimizer_state_dict': model_optimizer.state_dict(),
         'reconstructor_optimizer_state_dict': reconstructor_optimizer.state_dict(),

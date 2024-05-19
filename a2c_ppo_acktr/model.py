@@ -13,19 +13,29 @@ class Flatten(nn.Module):
 
 
 class Policy(nn.Module):
-    def __init__(self, obs_shape, action_space, base=None, base_kwargs=None):
+    def __init__(self, obs_shape, action_space, base=None, base_kwargs=None, pretrained_extractor=False):
         super(Policy, self).__init__()
         if base_kwargs is None:
             base_kwargs = {}
+        self.pretrained_extractor = False
         if base is None:
-            if len(obs_shape) == 3:
+            if pretrained_extractor:
+                self.pretrained_extractor = True
+                base = Pretrained_Base
+                self.feature_extractor = Encoder()
+                for param in self.feature_extractor.parameters():
+                    param.requires_grad = False
+                self.base = base((64), **base_kwargs)
+            elif len(obs_shape) == 3:
                 base = CNNBase
+                self.base = base(obs_shape[0], **base_kwargs)
             elif len(obs_shape) == 1:
                 base = MLPBase
+                self.base = base(obs_shape[0], **base_kwargs)
             else:
                 raise NotImplementedError
 
-        self.base = base(obs_shape[0], **base_kwargs)
+        
 
         if action_space.__class__.__name__ == "Discrete":
             num_outputs = action_space.n
@@ -52,7 +62,11 @@ class Policy(nn.Module):
         raise NotImplementedError
 
     def act(self, inputs, rnn_hxs, masks, deterministic=False):
-        value, actor_features, rnn_hxs = self.base(inputs, rnn_hxs, masks)
+        if self.pretrained_extractor:
+            x = self.feature_extractor(inputs)
+            value, actor_features, rnn_hxs = self.base(x, rnn_hxs, masks)
+        else:
+            value, actor_features, rnn_hxs = self.base(inputs, rnn_hxs, masks)
         dist = self.dist(actor_features)
 
         if deterministic:
@@ -185,14 +199,12 @@ class CNNBase(NNBase):
                                constant_(x, 0), np.sqrt(2))
 
         self.actor = nn.Sequential(
-            init_(nn.Linear(num_inputs, hidden_size)), nn.Tanh(),
-            init_(nn.Linear(hidden_size, hidden_size)), nn.Tanh())
+            init_(nn.Linear(64, 64)), nn.Tanh(),
+            init_(nn.Linear(64, 64)), nn.Tanh())
 
         self.critic = nn.Sequential(
-            init_(nn.Linear(num_inputs, hidden_size)), nn.Tanh(),
-            init_(nn.Linear(hidden_size, hidden_size)), nn.Tanh())
-
-        self.critic_linear = init_(nn.Linear(hidden_size, 1))
+            init_(nn.Linear(64, 64)), nn.Tanh(),
+            init_(nn.Linear(64, 1)), nn.Tanh())
 
         self.train()
 
@@ -206,7 +218,7 @@ class CNNBase(NNBase):
         hidden_critic = self.critic(x)
         hidden_actor = self.actor(x)
 
-        return self.critic_linear(hidden_critic), hidden_actor, rnn_hxs
+        return hidden_critic, hidden_actor, rnn_hxs
 
 
 class MLPBase(NNBase):
@@ -241,3 +253,55 @@ class MLPBase(NNBase):
         hidden_actor = self.actor(x)
 
         return self.critic_linear(hidden_critic), hidden_actor, rnn_hxs
+    
+
+    
+
+class Encoder(nn.Module):
+    def __init__(self):
+        super(Encoder, self).__init__()
+        self.conv1 = nn.Conv2d(1, 4, kernel_size=4, stride=2, padding=1)
+        self.conv2 = nn.Conv2d(4, 8, kernel_size=4, stride=2, padding=1)
+        self.conv3 = nn.Conv2d(8, 16, kernel_size=4, stride=2, padding=1)
+        self.conv4 = nn.Conv2d(16, 32, kernel_size=4, stride=2, padding=1)
+        self.conv5 = nn.Conv2d(32, 64, kernel_size=4, stride=1, padding=0)
+        self.fc = nn.Linear(64, 64)
+
+    def forward(self, x):
+        x = torch.relu(self.conv1(x))
+        x = torch.relu(self.conv2(x))
+        x = torch.relu(self.conv3(x))
+        x = torch.relu(self.conv4(x))
+        x = torch.relu(self.conv5(x))
+        x = x.view(x.size(0), -1)
+        x = self.fc(x)
+        return x
+    
+
+class Pretrained_Base(NNBase):
+    def __init__(self, num_inputs, recurrent=False, hidden_size=64):
+        super(Pretrained_Base, self).__init__(recurrent, hidden_size, hidden_size)
+        init_ = lambda m: init(m, nn.init.orthogonal_, lambda x: nn.init.
+                                constant_(x, 0), np.sqrt(2))
+
+        self.actor = nn.Sequential(
+            init_(nn.Linear(64, 64)), nn.Tanh(),
+            init_(nn.Linear(64, 64)), nn.Tanh())
+
+        self.critic = nn.Sequential(
+            init_(nn.Linear(64, 64)), nn.Tanh(),
+            init_(nn.Linear(64, 1)), nn.Tanh())
+
+        self.train()
+
+    def forward(self, inputs, rnn_hxs, masks):
+        #print(f"inputs: {inputs.shape}")
+        x = inputs
+
+        if self.is_recurrent:
+            x, rnn_hxs = self._forward_gru(x, rnn_hxs, masks)
+
+        hidden_critic = self.critic(x)
+        hidden_actor = self.actor(x)
+
+        return hidden_critic, hidden_actor, rnn_hxs

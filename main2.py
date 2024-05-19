@@ -33,6 +33,13 @@ def load_model_weights(actor_critic, envs, save_path, device):
     else:
         print(f"No model weights found at {save_path}")
 
+def load_encoder_weights(actor_critic, save_path, device):
+    checkpoint = torch.load(save_path, map_location=device)
+    if 'encoder_state_dict' in checkpoint:
+        actor_critic.feature_extractor.load_state_dict(checkpoint['encoder_state_dict'])
+    else:
+        raise KeyError("Pretrained encoder weights not found in checkpoint")
+
 
 def main(args):
 
@@ -68,8 +75,14 @@ def main(args):
     actor_critic = Policy(
         envs.observation_space.shape,
         envs.action_space,
-        base_kwargs={'recurrent': args.recurrent_policy})
+        base_kwargs={'recurrent': args.recurrent_policy}, pretrained_extractor=args.pretrained_extractor)
     actor_critic.to(device)
+
+
+    if args.pretrained_encoder:
+        print("Loading pretrained encoder weights")
+        save_path = os.path.join(args.save_dir, args.algo, args.load_weight_name + ".pt")
+        load_encoder_weights(actor_critic, save_path, device)
 
     if args.algo == 'ppo':
         agent = algo.PPO(
@@ -276,5 +289,5 @@ if __name__ == "__main__":
     args.eval_interval = 100
     args.save_interval = 100
     args.view_video_interval = 20
-
+    args.pretrained_encoder= True
     main(args)
