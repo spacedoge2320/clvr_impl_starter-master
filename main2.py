@@ -18,34 +18,23 @@ from a2c_ppo_acktr.envs import make_vec_envs
 from model import Policy
 from a2c_ppo_acktr.storage import RolloutStorage
 from evaluation import evaluate
+from tqdm import tqdm
+import csv
+import datetime
+
+def load_model_weights(actor_critic, envs, save_path, device):
+    if os.path.exists(save_path):
+        checkpoint = torch.load(save_path)
+        actor_critic.load_state_dict(checkpoint[0].state_dict())
+        vec_norm = utils.get_vec_normalize(envs)
+        if vec_norm is not None and checkpoint[1] is not None:
+            vec_norm.obs_rms = checkpoint[1]
+        print(f"Loaded model weights from {save_path}")
+    else:
+        print(f"No model weights found at {save_path}")
 
 
-
-
-
-def main():
-    args = get_args()
-    args.env_name = "Sprites-v0"
-    args.algo = "ppo"
-    args.use_gae = True
-    args.log_interval = 10
-    args.num_steps = 100
-    args.num_processes = 8
-    args.lr = 3e-4
-    args.entropy_coef = 0
-    args.value_loss_coef = 0.5
-    args.ppo_epoch = 10
-    args.num_mini_batch = 32
-    args.gamma = 0.99
-    args.gae_lambda = 0.95
-    args.num_env_steps = 5000000
-    args.use_linear_lr_decay = True
-    args.use_proper_time_limits = True
-    args.cuda = True
-    args.log_dir = 'logs'
-    args.save_dir = 'model_weights'
-    args.eval_interval = 500
-    args.save_interval = 500
+def main(args):
 
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
@@ -106,10 +95,27 @@ def main():
 
     episode_rewards = deque(maxlen=10)
 
+    # Create CSV file
+    current_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    csv_file = os.path.join(args.log_dir, f"{current_time}_{args.env_name}.csv")
+
+    # Write header to CSV file
+    header = ["Update", "Num Timesteps", "FPS", "Mean Reward", "Median Reward", "Min Reward", "Max Reward", "Dist Entropy", "Value Loss", "Action Loss"]
+    with open(csv_file, mode='w') as file:
+        writer = csv.writer(file)
+        writer.writerow(header)
+
+    
+    if args.load_model:
+        # Load model weights
+        print(f"Loading model weights from {args.save_dir}")
+        save_path = os.path.join(args.save_dir, args.algo, args.load_weight_name + ".pt")
+        load_model_weights(actor_critic, envs, save_path, device)
+
     start = time.time()
     num_updates = int(
         args.num_env_steps) // args.num_steps // args.num_processes
-    for j in range(num_updates):
+    for j in tqdm(range(num_updates), desc="Training Progress"):
 
         if args.use_linear_lr_decay:
             # decrease learning rate linearly
@@ -152,6 +158,7 @@ def main():
 
         rollouts.after_update()
 
+
         # save for every interval-th episode or for the last epoch
         if (j % args.save_interval == 0
                 or j == num_updates - 1) and args.save_dir != "":
@@ -164,7 +171,7 @@ def main():
             torch.save([
                 actor_critic,
                 getattr(utils.get_vec_normalize(envs), 'obs_rms', None)
-            ], os.path.join(save_path, args.env_name + ".pt"))
+            ], os.path.join(save_path, args.save_weight_name +"_step_"+ str(j) + ".pt"))
 
         if j % args.log_interval == 0 and len(episode_rewards) > 1:
             total_num_steps = (j + 1) * args.num_processes * args.num_steps
@@ -177,20 +184,63 @@ def main():
                         np.median(episode_rewards), np.min(episode_rewards),
                         np.max(episode_rewards), dist_entropy, value_loss,
                         action_loss))
+                        # Write to CSV file
+            with open(csv_file, mode='a') as file:
+                writer = csv.writer(file)
+                writer.writerow([j, total_num_steps, int(total_num_steps / (end - start)), np.mean(episode_rewards), np.median(episode_rewards), np.min(episode_rewards), np.max(episode_rewards), dist_entropy, value_loss, action_loss])
             
-            if obs.shape[2] == 64:
-                for i in range(len(rollouts.obs)):
+       
+        if j % args.view_video_interval == 0 and len(episode_rewards) > 1:
+            for i in range(min(len(rollouts.obs),40)):
+                obs_copy = rollouts.obs[i].cpu().clone().detach().numpy()
+                images = []
+                #print(obs_copy.shape)
+                if len(obs_copy.shape) ==4:
                     obs_copy = rollouts.obs[i].cpu().clone().detach().numpy()
                     image = None
-                    for i in range (obs_copy.shape[0]):
+                    for k in range (obs_copy.shape[0]):
                         observation_resized = cv2.resize(obs_copy[0,0,:,:], (200, 200))
-                        if image is None:
-                            image = observation_resized
-                        else:
-                            image = np.hstack((image, observation_resized))
-                    cv2.imshow('Environment', image)
-                    cv2.waitKey(1)
-                    time.sleep(0.02)
+                        observation_resized = cv2.cvtColor(observation_resized, cv2.COLOR_GRAY2RGB)
+                        observation_resized = cv2.rectangle(observation_resized, (0, 0), (200, 200), (0, 0, 255), 2)
+                        images.append(observation_resized)
+
+                else:
+                    for k in range (obs_copy.shape[0]):
+                        canvas = np.zeros((200, 200,3))
+                        canvas = cv2.rectangle(canvas, (0, 0), (200, 200), (0, 0, 255), 2)
+                        # per processes
+                        for j in range (obs_copy.shape[1]//2):
+                            # per shape x y
+                            #print(j)
+                            
+                            x,y = (obs_copy[k][2*j]+2)/4, (obs_copy[k][2*j+1]+2)/4 
+
+                            if j == 0:
+                                cv2.circle(canvas, (int(x*200), int(y*200)), 20, (255, 255, 255), -1)
+                            elif j == 1:
+                                cv2.rectangle(canvas, (int((x-0.1)*200), int((y-0.1)*200)), (int((x+0.1)*200), int((y+0.1)*200)), (255, 255, 255), -1)
+                            else:
+                                cv2.line(canvas, (int((x)*200), int((y-0.1)*200)), (int((x+0.1)*200), int((y+0.1)*200)), (255, 255, 255), 2)
+                                cv2.line(canvas, (int((x)*200), int((y-0.1)*200)), (int((x-0.1)*200), int((y+0.1)*200)), (255, 255, 255), 2)
+                                cv2.line(canvas, (int((x-0.1)*200), int((y+0.1)*200)), (int((x+0.1)*200), int((y+0.1)*200)), (255, 255, 255), 2)
+                        images.append(canvas)
+                
+                width = 4
+                height = ((obs_copy.shape[0])-1)//width +1
+                total_canvas = np.zeros((200*width, 200*height,3))
+
+                for i in range(len(images)):
+                    x,y = i%width, (i)//width
+                    image = images[i]
+
+                    #print(x*200,(x+1)*200, y*200,(y+1)*200)
+                    total_canvas[x*200:(x+1)*200, y*200:(y+1)*200,] = image
+
+
+                cv2.imshow('Environment', total_canvas)
+                cv2.waitKey(1)
+                time.sleep(0.1)
+            #cv2.destroyAllWindows()
 
         if (args.eval_interval is not None and len(episode_rewards) > 1
                 and j % args.eval_interval == 0):
@@ -199,5 +249,32 @@ def main():
 
 
 if __name__ == "__main__":
+    args = get_args()
+    args.env_name = "Sprites-v0"
+    args.algo = "ppo"
+    args.use_gae = True
+    args.log_interval = 1
+    args.num_steps = 200
+    args.num_processes = 16
+    args.seed = 100
+    args.lr = 3e-4
+    args.entropy_coef = 0
+    args.value_loss_coef = 0.5
+    args.ppo_epoch = 8
+    args.num_mini_batch = 32
+    args.gamma = 0.99
+    args.gae_lambda = 0.95
+    args.num_env_steps = 5000000
+    args.use_linear_lr_decay = True
+    args.use_proper_time_limits = True
+    args.cuda = True
+    args.log_dir = 'logs'
+    args.save_dir = 'model_weights'
+    args.save_weight_name = 'SpritesState-v0'
+    args.load_model = False
+    args.load_weight_name = 'SpritesState-v0'
+    args.eval_interval = 100
+    args.save_interval = 100
+    args.view_video_interval = 20
 
-    main()
+    main(args)

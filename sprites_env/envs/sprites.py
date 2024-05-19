@@ -1,5 +1,5 @@
 import gym
-from gym.spaces import Box
+from gym.spaces import Box, 
 import numpy as np
 import cv2
 import os
@@ -186,18 +186,22 @@ class SpritesEnv(gym.Env):
 
 
 class SpritesStateEnv(SpritesEnv):
+    from gym.spaces import Box
     def __init__(self, follow=True, **kwarg):
         super().__init__(follow=follow, **kwarg)
         # only return pos_state
         self.observation_space = Box(low=0.0, high=1.0,
-                shape=((self.n_distractors + 2) * self._n_dim, ),
+                shape=((self.n_distractors + 2) * self._n_dim,),
                 dtype=np.float64)
+        #print("Observation space: ", self.observation_space)
 
     def set_config(self, spec):
         super().set_config(spec)
         self.observation_space = Box(low=0.0, high=1.0,
-                shape=((self.n_distractors + 2) * self._n_dim, ),
+                shape=((self.n_distractors + 2) * self._n_dim,),
                 dtype=np.float64)
+        
+        
 
     def reset(self,seed=None, **kwargs):
         super().reset()

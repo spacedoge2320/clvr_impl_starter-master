@@ -166,6 +166,7 @@ class NNBase(nn.Module):
         return x, hxs
 
 
+
 class CNNBase(NNBase):
     def __init__(self, num_inputs, recurrent=False, hidden_size=64):
         super(CNNBase, self).__init__(recurrent, hidden_size, hidden_size)
@@ -177,24 +178,35 @@ class CNNBase(NNBase):
             init_(nn.Conv2d(1, 4, 4, stride=2,padding=1)), nn.ReLU(),
             init_(nn.Conv2d(4, 8, 4, stride=2,padding=1)), nn.ReLU(),
             init_(nn.Conv2d(8, 16, 4, stride=2,padding=1)), nn.ReLU(),
-            init_(nn.Conv2d(16, 32, 4, stride=2,padding=1)), nn.ReLU(), Flatten(),
-            init_(nn.Conv2d(32, 64, 4, stride=1,padding=0)), nn.ReLU())
-
+            init_(nn.Conv2d(16, 32, 4, stride=2,padding=1)), nn.ReLU(),
+            init_(nn.Conv2d(32, 64, 4, stride=1,padding=0)), nn.ReLU(), Flatten())
+        
         init_ = lambda m: init(m, nn.init.orthogonal_, lambda x: nn.init.
-                               constant_(x, 0))
+                               constant_(x, 0), np.sqrt(2))
+
+        self.actor = nn.Sequential(
+            init_(nn.Linear(num_inputs, hidden_size)), nn.Tanh(),
+            init_(nn.Linear(hidden_size, hidden_size)), nn.Tanh())
+
+        self.critic = nn.Sequential(
+            init_(nn.Linear(num_inputs, hidden_size)), nn.Tanh(),
+            init_(nn.Linear(hidden_size, hidden_size)), nn.Tanh())
 
         self.critic_linear = init_(nn.Linear(hidden_size, 1))
 
         self.train()
 
     def forward(self, inputs, rnn_hxs, masks):
-        print(f"inputs: {inputs.shape}")
+        #print(f"inputs: {inputs.shape}")
         x = self.main(inputs / 255.0)
 
         if self.is_recurrent:
             x, rnn_hxs = self._forward_gru(x, rnn_hxs, masks)
 
-        return self.critic_linear(x), x, rnn_hxs
+        hidden_critic = self.critic(x)
+        hidden_actor = self.actor(x)
+
+        return self.critic_linear(hidden_critic), hidden_actor, rnn_hxs
 
 
 class MLPBase(NNBase):
