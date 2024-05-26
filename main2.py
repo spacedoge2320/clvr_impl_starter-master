@@ -15,7 +15,7 @@ import torch.optim as optim
 from a2c_ppo_acktr import algo, utils
 from a2c_ppo_acktr.arguments import get_args
 from a2c_ppo_acktr.envs import make_vec_envs
-from model import Policy
+from a2c_ppo_acktr.model import Policy
 from a2c_ppo_acktr.storage import RolloutStorage
 from evaluation import evaluate
 from tqdm import tqdm
@@ -37,6 +37,8 @@ def load_encoder_weights(actor_critic, save_path, device):
     checkpoint = torch.load(save_path, map_location=device)
     if 'encoder_state_dict' in checkpoint:
         actor_critic.feature_extractor.load_state_dict(checkpoint['encoder_state_dict'])
+        print(f"Loaded encoder weights from {save_path}")
+        print(actor_critic.feature_extractor.state_dict().keys())
     else:
         raise KeyError("Pretrained encoder weights not found in checkpoint")
 
@@ -75,13 +77,13 @@ def main(args):
     actor_critic = Policy(
         envs.observation_space.shape,
         envs.action_space,
-        base_kwargs={'recurrent': args.recurrent_policy}, pretrained_extractor=args.pretrained_extractor)
+        base_kwargs={'recurrent': args.recurrent_policy}, pretrained_extractor=args.pretrained_encoder)
     actor_critic.to(device)
 
 
     if args.pretrained_encoder:
         print("Loading pretrained encoder weights")
-        save_path = os.path.join(args.save_dir, args.algo, args.load_weight_name + ".pt")
+        save_path = os.path.join('model_weights', 'representation_extraction_v2' + ".pth")
         load_encoder_weights(actor_critic, save_path, device)
 
     if args.algo == 'ppo':
@@ -110,7 +112,7 @@ def main(args):
 
     # Create CSV file
     current_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    csv_file = os.path.join(args.log_dir, f"{current_time}_{args.env_name}.csv")
+    csv_file = os.path.join(args.log_dir, f"{args.save_name}_{current_time}.csv")
 
     # Write header to CSV file
     header = ["Update", "Num Timesteps", "FPS", "Mean Reward", "Median Reward", "Min Reward", "Max Reward", "Dist Entropy", "Value Loss", "Action Loss"]
@@ -122,7 +124,7 @@ def main(args):
     if args.load_model:
         # Load model weights
         print(f"Loading model weights from {args.save_dir}")
-        save_path = os.path.join(args.save_dir, args.algo, args.load_weight_name + ".pt")
+        save_path = os.path.join(args.save_dir, args.algo, args.load_weight_name + ".pth")
         load_model_weights(actor_critic, envs, save_path, device)
 
     start = time.time()
@@ -184,7 +186,7 @@ def main(args):
             torch.save([
                 actor_critic,
                 getattr(utils.get_vec_normalize(envs), 'obs_rms', None)
-            ], os.path.join(save_path, args.save_weight_name +"_step_"+ str(j) + ".pt"))
+            ], os.path.join(save_path, args.save_name +"_step_"+ str(j) + ".pt"))
 
         if j % args.log_interval == 0 and len(episode_rewards) > 1:
             total_num_steps = (j + 1) * args.num_processes * args.num_steps
@@ -262,8 +264,31 @@ def main(args):
 
 
 if __name__ == "__main__":
+    Environment_list = ["Sprites","SpritesState"]
+    Distractors = ["-v0","-v1","-v2","-v3","-v4","-v5","-v6","-v7","-v8","-v9"]
+    Policy_list = ["ORACLE","CNN_PPO","PRE_TRAINED"]
+    Setting = [0,0,1]
+
+    env = Environment_list[Setting[0]]+Distractors[Setting[1]]
+
+    pre_trained = (Setting[2] == 2)
+
+    save_name = Policy_list[Setting[2]] + "_"+ str(Setting[1]) +"_distractors"
+
+    if Setting[0]==1 and Setting[2] != 0:
+        print("SpritesState only supports ORACLE policy")
+        raise ValueError("Invalid Setting")
+    if Setting[0]!=1 and Setting[2] == 0:
+        print("Oracle policy only supports SpritesState environment")
+        raise ValueError("Invalid Setting")
+    
+        
+    
+
+
+
     args = get_args()
-    args.env_name = "Sprites-v0"
+    args.env_name = env
     args.algo = "ppo"
     args.use_gae = True
     args.log_interval = 1
@@ -289,5 +314,6 @@ if __name__ == "__main__":
     args.eval_interval = 100
     args.save_interval = 100
     args.view_video_interval = 20
-    args.pretrained_encoder= True
+    args.pretrained_encoder= pre_trained
+    args.save_name = save_name
     main(args)

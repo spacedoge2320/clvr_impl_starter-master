@@ -80,11 +80,19 @@ class Policy(nn.Module):
         return value, action, action_log_probs, rnn_hxs
 
     def get_value(self, inputs, rnn_hxs, masks):
-        value, _, _ = self.base(inputs, rnn_hxs, masks)
+        if self.pretrained_extractor:
+            x = self.feature_extractor(inputs)
+            value, _, _ = self.base(x, rnn_hxs, masks)
+        else:
+            value, _, _ = self.base(inputs, rnn_hxs, masks)
         return value
 
     def evaluate_actions(self, inputs, rnn_hxs, masks, action):
-        value, actor_features, rnn_hxs = self.base(inputs, rnn_hxs, masks)
+        if self.pretrained_extractor:
+            x = self.feature_extractor(inputs)
+            value, actor_features, rnn_hxs = self.base(x, rnn_hxs, masks)
+        else:
+            value, actor_features, rnn_hxs = self.base(inputs, rnn_hxs, masks)
         dist = self.dist(actor_features)
 
         action_log_probs = dist.log_probs(action)
@@ -265,7 +273,7 @@ class Encoder(nn.Module):
         self.conv3 = nn.Conv2d(8, 16, kernel_size=4, stride=2, padding=1)
         self.conv4 = nn.Conv2d(16, 32, kernel_size=4, stride=2, padding=1)
         self.conv5 = nn.Conv2d(32, 64, kernel_size=4, stride=1, padding=0)
-        self.fc = nn.Linear(64, 64)
+        self.fc = nn.Linear(64*1*1, 64)
 
     def forward(self, x):
         x = torch.relu(self.conv1(x))
@@ -285,12 +293,12 @@ class Pretrained_Base(NNBase):
                                 constant_(x, 0), np.sqrt(2))
 
         self.actor = nn.Sequential(
-            init_(nn.Linear(64, 64)), nn.Tanh(),
-            init_(nn.Linear(64, 64)), nn.Tanh())
+            init_(nn.Linear(num_inputs, hidden_size)), nn.Tanh(),
+            init_(nn.Linear(hidden_size, hidden_size)), nn.Tanh())
 
         self.critic = nn.Sequential(
-            init_(nn.Linear(64, 64)), nn.Tanh(),
-            init_(nn.Linear(64, 1)), nn.Tanh())
+            init_(nn.Linear(num_inputs, hidden_size)), nn.Tanh(),
+            init_(nn.Linear(hidden_size, 1)), nn.Tanh())
 
         self.train()
 
