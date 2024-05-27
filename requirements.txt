@@ -2,3 +2,7 @@ numpy
 matplotlib
 opencv-python
 gym
+pytorch
+tqdm
+csv
+stable_baselines3
