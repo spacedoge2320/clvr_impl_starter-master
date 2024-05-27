@@ -197,6 +197,7 @@ class CNNBase(NNBase):
                                constant_(x, 0), nn.init.calculate_gain('relu'))
 
         self.main = nn.Sequential(
+            init_(nn.Conv2d(1, 1, 3, stride=2,padding=1)), nn.ReLU(),
             init_(nn.Conv2d(1, 4, 4, stride=2,padding=1)), nn.ReLU(),
             init_(nn.Conv2d(4, 8, 4, stride=2,padding=1)), nn.ReLU(),
             init_(nn.Conv2d(8, 16, 4, stride=2,padding=1)), nn.ReLU(),

@@ -25,7 +25,7 @@ class SpritesEnv(gym.Env):
         self.repel = not self.follow
         self.max_speed = 0.05
         self.obj_size = 0.2
-        self.resolution = 64
+        self.resolution = 128
 
         self.pos_bounds = [[self.obj_size/2, 1 - self.obj_size/2]] * 2
         bounds = list(self.pos_bounds) + [[-self.max_speed, self.max_speed]] * 2
