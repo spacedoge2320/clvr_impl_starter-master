@@ -1,8 +1,7 @@
-import gym
+import gymnasium as gym
 import sprites_env
 import cv2
 import time
-import cnn_baseline
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -11,10 +10,10 @@ import torch.nn.functional as F
 import os
 import numpy as np
 from collections import deque
-import utils
+import a2c_ppo_acktr.utils as utils
 from evaluation import evaluate
-from model import Policy
-from storage import RolloutStorage
+from a2c_ppo_acktr.model import Policy
+from a2c_ppo_acktr.storage import RolloutStorage
 import algorithms.PPO_algo as PPO_algo
 
 # Check if the MPS (Metal Performance Shaders) backend is available
