@@ -23,14 +23,11 @@ from tqdm import tqdm
 import csv
 import datetime
 from google.cloud import storage
+import yaml
 
 class RL_main:
     def __init__(self, config, gcp_bucket=None):
         Environment_list = ["Sprites", "SpritesState"]
-        
-        with open('config.yaml', 'r') as file:
-            config = yaml.safe_load(file)
-
         architecture = config['architecture_list'][config['architecture']]
 
         if architecture == "Oracle":
@@ -133,6 +130,12 @@ class RL_main:
         # Create CSV file
         csv_file = os.path.join(config['log_dir'], f"{config['save_name']}.csv")
 
+        # Write header to CSV file
+        header = ["Update", "Num Timesteps", "FPS", "Mean Reward", "Median Reward", "Min Reward", "Max Reward", "Dist Entropy", "Value Loss", "Action Loss"]
+        with open(csv_file, mode='w') as file:
+            writer = csv.writer(file)
+            writer.writerow(header)
+
         # Access GCP bucket
         if config['upload_to_gcp']:
             gcp_key = config['gcp_key']
@@ -140,15 +143,16 @@ class RL_main:
             storage_client = storage.Client()
             bucket = storage_client.bucket(config['gcp_bucket_name'])
             blob = bucket.blob(f"{config['architecture_list'][config['architecture']]}/{config['save_name']}/train_log.csv")
-
-        # Write header to CSV file
-        header = ["Update", "Num Timesteps", "FPS", "Mean Reward", "Median Reward", "Min Reward", "Max Reward", "Dist Entropy", "Value Loss", "Action Loss"]
-        with open(csv_file, mode='w') as file:
-            writer = csv.writer(file)
-            writer.writerow(header)
-        
-        if config['upload_to_gcp']:
             blob.upload_from_filename(csv_file)
+            # Reparse config to yaml
+            config_yaml = yaml.dump(config)
+
+            # Upload config to GCP
+            blob_config = bucket.blob(f"{config['architecture_list'][config['architecture']]}/{config['save_name']}.yaml")
+            blob_config.upload_from_string(config_yaml)
+
+
+
 
         if config['load_model']:
             # Load model weights
