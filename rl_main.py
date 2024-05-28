@@ -139,7 +139,7 @@ class RL_main:
             os.environ["GOOGLE_APPLICATION_CREDENTIALS"]=gcp_key
             storage_client = storage.Client()
             bucket = storage_client.bucket(config['gcp_bucket_name'])
-            blob = bucket.blob(f"{config['architecture']}/{config['save_name']}/train_log.csv")
+            blob = bucket.blob(f"{config['architecture_list'][config['architecture']]}/{config['save_name']}/train_log.csv")
 
         # Write header to CSV file
         header = ["Update", "Num Timesteps", "FPS", "Mean Reward", "Median Reward", "Min Reward", "Max Reward", "Dist Entropy", "Value Loss", "Action Loss"]
