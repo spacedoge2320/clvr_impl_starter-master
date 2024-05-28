@@ -5,7 +5,7 @@ import time
 from collections import deque
 import sprites_env
 import cv2
-import gym
+import gymnasium as gym
 import numpy as np
 import torch
 import torch.nn as nn
@@ -267,7 +267,7 @@ if __name__ == "__main__":
     Environment_list = ["Sprites","SpritesState"]
     Distractors = ["-v0","-v1","-v2","-v3","-v4","-v5","-v6","-v7","-v8","-v9"]
     Policy_list = ["ORACLE","CNN_PPO","PRE_TRAINED"]
-    Setting = [0,2,1]
+    Setting = [0,0,1]
 
 
     if Setting[0] == 1:
