@@ -1,0 +1,58 @@
+# Architecture Settings
+architecture_list:
+  - Oracle
+  - CNN
+  - Pre-trained
+architecture: 1
+
+# Distractors
+distractors: 0
+
+# GAE Settings
+use_gae: true
+gae_lambda: 0.95
+
+# Logging Settings
+log_interval: 1
+log_dir: "logs"
+log_comment: "first_cnn_test"
+visualize: false
+upload_to_gcp: true
+gcp_bucket_name: "jslee_1210_2024_0528_rl_training"
+gcp_key: ../burnished-city-422610-g3-6e5fb4c4e617.json
+# This bucket should be secured with the appropriate permissions
+
+# Training Settings
+num_steps: 40
+num_processes: 32
+seed: 100
+lr: 0.0003
+entropy_coef: 0
+value_loss_coef: 0.5
+ppo_epoch: 8
+num_mini_batch: 32
+gamma: 0.99
+num_env_steps: 5000000
+use_linear_lr_decay: true
+use_proper_time_limits: true
+recurrent_policy: false
+clip_param: 0.1
+eps: 0.00001
+max_grad_norm: 0.5
+
+# Accelerator Settings (use 0 or 1 as values)
+cpu: 1
+cuda: 0
+mps: 0
+
+# Saving and Loading Settings
+save_dir: "model_weights"
+save_weight_name: "SpritesState-v0"
+load_model: false
+load_weight_name: "SpritesState-v0"
+
+# Evaluation and Intervals
+eval_interval: 100
+save_interval: 100
+view_video_interval: 20
+save_name: "CNN_PPO_0_distractors"

@@ -6,3 +6,5 @@ torch
 torchvision
 tqdm
 stable_baselines3
+PyYAML
+google-cloud-storage
