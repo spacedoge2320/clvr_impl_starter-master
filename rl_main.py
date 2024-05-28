@@ -138,17 +138,18 @@ class RL_main:
 
         # Access GCP bucket
         if config['upload_to_gcp']:
+            self.bucket_blob_dir = f"{config['architecture_list'][config['architecture']]}/{config['save_name']}"
             gcp_key = config['gcp_key']
             os.environ["GOOGLE_APPLICATION_CREDENTIALS"]=gcp_key
             storage_client = storage.Client()
             bucket = storage_client.bucket(config['gcp_bucket_name'])
-            blob = bucket.blob(f"{config['architecture_list'][config['architecture']]}/{config['save_name']}/train_log.csv")
+            blob = bucket.blob(f"{self.bucket_blob_dir}/train_log.csv")
             blob.upload_from_filename(csv_file)
             # Reparse config to yaml
             config_yaml = yaml.dump(config)
 
             # Upload config to GCP
-            blob_config = bucket.blob(f"{config['architecture_list'][config['architecture']]}/{config['save_name']}/settings.yaml")
+            blob_config = bucket.blob(f"{self.bucket_blob_dir}/settings.yaml")
             blob_config.upload_from_string(config_yaml)
 
 
@@ -222,7 +223,7 @@ class RL_main:
                 
                 # Upload model weights to GCP
                 if config['upload_to_gcp']:
-                    blob_model = bucket.blob(f"{config['architecture']}/{config['save_name']}/{config['save_name']}_step_{str(j)}.pt")
+                    blob_model = bucket.blob(f"{self.bucket_blob_dir}/_step_{str(j)}.pt")
                     blob_model.upload_from_filename(os.path.join(save_path, config['save_name'] +"_step_"+ str(j) + ".pt"))
 
             if j % config['log_interval'] == 0 and len(episode_rewards) > 1:
