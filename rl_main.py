@@ -148,7 +148,7 @@ class RL_main:
             config_yaml = yaml.dump(config)
 
             # Upload config to GCP
-            blob_config = bucket.blob(f"{config['architecture_list'][config['architecture']]}/{config['save_name']}.yaml")
+            blob_config = bucket.blob(f"{config['architecture_list'][config['architecture']]}/{config['save_name']}/settings.yaml")
             blob_config.upload_from_string(config_yaml)
 
 
