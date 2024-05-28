@@ -298,7 +298,7 @@ if __name__ == "__main__":
     args.use_gae = True
     args.log_interval = 1
     args.num_steps = 40
-    args.num_processes = 16
+    args.num_processes = 32
     args.seed = 100
     args.lr = 3e-4
     args.entropy_coef = 0
