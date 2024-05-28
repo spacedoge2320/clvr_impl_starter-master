@@ -2,7 +2,7 @@ numpy
 matplotlib
 opencv-python
 gym
-pytorch
+torch
+torchvision
 tqdm
-csv
 stable_baselines3

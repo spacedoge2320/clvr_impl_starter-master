@@ -1,0 +1,2 @@
+Update,Num Timesteps,FPS,Mean Reward,Median Reward,Min Reward,Max Reward,Dist Entropy,Value Loss,Action Loss
+0,3200,315,28.2813279,29.6865125,20.513056,33.693956,2.8392409831285477,32.97637941688299,-0.04702760472707723

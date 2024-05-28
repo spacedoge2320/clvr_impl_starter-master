@@ -90,6 +90,8 @@ class DiagGaussian(nn.Module):
         zeros = torch.zeros(action_mean.size())
         if x.is_cuda:
             zeros = zeros.cuda()
+        if x.is_mps:
+            zeros = zeros.to(x.device)
 
         action_logstd = self.logstd(zeros)
         action_logstd = action_logstd.clamp(min=0, max=2)
