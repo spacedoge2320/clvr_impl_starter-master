@@ -1,6 +1,7 @@
 import copy
 import glob
 import os
+import sys
 import time
 from collections import deque
 import sprites_env
@@ -24,6 +25,7 @@ import csv
 import datetime
 from google.cloud import storage
 import yaml
+import argparse
 
 class RL_main:
     def __init__(self, config, gcp_bucket=None):
@@ -232,7 +234,7 @@ class RL_main:
                 if j % config['log_interval'] == 0 and len(episode_rewards) > 1:
                     total_num_steps = (j + 1) * config['num_processes'] * config['num_steps']
                     end = time.time()
-                    pbar.set_postfix({"total_num_steps": total_num_steps, "mean_episode_rewards": np.mean(episode_rewards), "min_episode_rewards": np.min(episode_rewards), "max_episode_rewards": np.max(episode_rewards)})
+                    pbar.set_postfix({"tot_steps": total_num_steps, "avg_rwd": np.mean(episode_rewards), "min_rwd": np.min(episode_rewards), "max_rwd": np.max(episode_rewards)})
                     # Write to CSV file
                     with open(csv_file, mode='a') as file:
                         writer = csv.writer(file)
@@ -289,8 +291,14 @@ class RL_main:
                     evaluate(actor_critic, None, config['env_name'], config['seed'],
                             config['num_processes']
                             , eval_log_dir, device)
+            pbar.update(1)
 
 if __name__ == "__main__":
-    with open('config.yaml', 'r') as file:
+    if len(sys.argv) != 2:
+        config_path = "config.yaml"
+        print("Using default config file: config.yaml")
+    config_path = sys.argv[1]
+
+    with open(config_path, 'r') as file:
         config = yaml.safe_load(file)
     RL_main(config)
