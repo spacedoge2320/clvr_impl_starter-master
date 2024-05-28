@@ -74,16 +74,17 @@ class RL_main:
 
         if config['cpu'] ==1:
             device = torch.device('cpu')
+            print("Using CPU")
 
-        if config['cuda'] ==1 and torch.cuda.is_available() and config['cuda_deterministic']:
+        if config['cuda'] ==1 and torch.cuda.is_available():
             torch.manual_seed(config['seed'])
             torch.cuda.manual_seed_all(config['seed'])
-            torch.backends.cudnn.benchmark = False
-            torch.backends.cudnn.deterministic = True
             device = torch.device('cuda:0')
+            print("Using CUDA with deterministic settings")
         
         if config['mps'] ==1 and torch.backends.mps.is_available():
             device = torch.device('mps')
+            print("Using MPS")
         
         log_dir = os.path.expanduser(config['log_dir'])
         eval_log_dir = log_dir + "_eval"
@@ -164,135 +165,130 @@ class RL_main:
         start = time.time()
         num_updates = int(
             config['num_env_steps']) // config['num_steps'] // config['num_processes']
-        for j in tqdm(range(num_updates), desc="Training Progress"):
+        
+        with tqdm(total=num_updates, desc="Training Progress", unit="item") as pbar:
+            for j in range(num_updates):
 
-            if config['use_linear_lr_decay']:
-                # decrease learning rate linearly
-                utils.update_linear_schedule(
-                    agent.optimizer, j, num_updates,
-                    config['lr'])
+                if config['use_linear_lr_decay']:
+                    # decrease learning rate linearly
+                    utils.update_linear_schedule(
+                        agent.optimizer, j, num_updates,
+                        config['lr'])
 
-            for step in range(config['num_steps']):
-                # Sample actions
+                for step in range(config['num_steps']):
+                    # Sample actions
+                    with torch.no_grad():
+                        value, action, action_log_prob, recurrent_hidden_states = actor_critic.act(
+                            rollouts.obs[step], rollouts.recurrent_hidden_states[step],
+                            rollouts.masks[step])
+
+                    # Obser reward and next obs
+                    obs, reward, done, infos = envs.step(action)
+
+                    for info in infos:
+                        if 'episode' in info.keys():
+                            episode_rewards.append(info['episode']['r'])
+
+                    # If done then clean the history of observations.
+                    masks = torch.FloatTensor(
+                        [[0.0] if done_ else [1.0] for done_ in done])
+                    bad_masks = torch.FloatTensor(
+                        [[0.0] if 'bad_transition' in info.keys() else [1.0]
+                        for info in infos])
+                    rollouts.insert(obs, recurrent_hidden_states, action,
+                                    action_log_prob, value, reward, masks, bad_masks)
+
                 with torch.no_grad():
-                    value, action, action_log_prob, recurrent_hidden_states = actor_critic.act(
-                        rollouts.obs[step], rollouts.recurrent_hidden_states[step],
-                        rollouts.masks[step])
+                    next_value = actor_critic.get_value(
+                        rollouts.obs[-1], rollouts.recurrent_hidden_states[-1],
+                        rollouts.masks[-1]).detach()
 
-                # Obser reward and next obs
-                obs, reward, done, infos = envs.step(action)
+                rollouts.compute_returns(next_value, config['use_gae'], config['gamma'],
+                                        config['gae_lambda'], config['use_proper_time_limits'])
 
-                for info in infos:
-                    if 'episode' in info.keys():
-                        episode_rewards.append(info['episode']['r'])
+                value_loss, action_loss, dist_entropy = agent.update(rollouts)
 
-                # If done then clean the history of observations.
-                masks = torch.FloatTensor(
-                    [[0.0] if done_ else [1.0] for done_ in done])
-                bad_masks = torch.FloatTensor(
-                    [[0.0] if 'bad_transition' in info.keys() else [1.0]
-                    for info in infos])
-                rollouts.insert(obs, recurrent_hidden_states, action,
-                                action_log_prob, value, reward, masks, bad_masks)
+                rollouts.after_update()
 
-            with torch.no_grad():
-                next_value = actor_critic.get_value(
-                    rollouts.obs[-1], rollouts.recurrent_hidden_states[-1],
-                    rollouts.masks[-1]).detach()
+                # save for every interval-th episode or for the last epoch
+                if (j % config['save_interval'] == 0
+                        or j == num_updates - 1) and config['save_dir'] != "":
+                    save_path = os.path.join(config['save_dir'], config['save_name'])
+                    try:
+                        os.makedirs(save_path)
+                    except OSError:
+                        pass
 
-            rollouts.compute_returns(next_value, config['use_gae'], config['gamma'],
-                                    config['gae_lambda'], config['use_proper_time_limits'])
-
-            value_loss, action_loss, dist_entropy = agent.update(rollouts)
-
-            rollouts.after_update()
-
-            # save for every interval-th episode or for the last epoch
-            if (j % config['save_interval'] == 0
-                    or j == num_updates - 1) and config['save_dir'] != "":
-                save_path = os.path.join(config['save_dir'], config['save_name'])
-                try:
-                    os.makedirs(save_path)
-                except OSError:
-                    pass
-
-                torch.save([
-                    actor_critic,
-                    getattr(utils.get_vec_normalize(envs), 'obs_rms', None)
-                ], os.path.join(save_path, config['save_name'] +"_step_"+ str(j) + ".pt"))
-                
-                # Upload model weights to GCP
-                if config['upload_to_gcp']:
-                    blob_model = bucket.blob(f"{self.bucket_blob_dir}/_step_{str(j)}.pt")
-                    blob_model.upload_from_filename(os.path.join(save_path, config['save_name'] +"_step_"+ str(j) + ".pt"))
-
-            if j % config['log_interval'] == 0 and len(episode_rewards) > 1:
-                total_num_steps = (j + 1) * config['num_processes'] * config['num_steps']
-                end = time.time()
-                print(
-                    "Updates {}, num timesteps {}, FPS {} \n Last {} training episodes: mean/median reward {:.1f}/{:.1f}, min/max reward {:.1f}/{:.1f}\n"
-                    .format(j, total_num_steps,
-                            int(total_num_steps / (end - start)),
-                            len(episode_rewards), np.mean(episode_rewards),
-                            np.median(episode_rewards), np.min(episode_rewards),
-                            np.max(episode_rewards), dist_entropy, value_loss,
-                            action_loss))
-                # Write to CSV file
-                with open(csv_file, mode='a') as file:
-                    writer = csv.writer(file)
-                    writer.writerow([j, total_num_steps, int(total_num_steps / (end - start)), np.mean(episode_rewards), np.median(episode_rewards), np.min(episode_rewards), np.max(episode_rewards), dist_entropy, value_loss, action_loss])
-
-                # Upload updated CSV to GCP
-                if config['upload_to_gcp']:
-                    blob.upload_from_filename(csv_file)
-
-            if config['visualize'] and j % config['view_video_interval'] == 0 and len(episode_rewards) > 1:
-                for i in range(min(len(rollouts.obs),40)):
-                    obs_copy = rollouts.obs[i].cpu().clone().detach().numpy()
-                    images = []
-                    if len(obs_copy.shape) ==4:
-                        obs_copy = rollouts.obs[i].cpu().clone().detach().numpy()
-                        image = None
-                        for k in range (obs_copy.shape[0]):
-                            observation_resized = cv2.resize(obs_copy[0,0,:,:], (200, 200))
-                            observation_resized = cv2.cvtColor(observation_resized, cv2.COLOR_GRAY2RGB)
-                            observation_resized = cv2.rectangle(observation_resized, (0, 0), (200, 200), (0, 0, 255), 2)
-                            images.append(observation_resized)
-
-                    else:
-                        for k in range (obs_copy.shape[0]):
-                            canvas = np.zeros((200, 200,3))
-                            canvas = cv2.rectangle(canvas, (0, 0), (200, 200), (0, 0, 255), 2)
-                            for j in range (obs_copy.shape[1]//2):
-                                x,y = (obs_copy[k][2*j]+2)/4, (obs_copy[k][2*j+1]+2)/4 
-                                if j == 0:
-                                    cv2.circle(canvas, (int(x*200), int(y*200)), 20, (255, 255, 255), -1)
-                                elif j == 1:
-                                    cv2.rectangle(canvas, (int((x-0.1)*200), int((y-0.1)*200)), (int((x+0.1)*200), int((y+0.1)*200)), (255, 255, 255), -1)
-                                else:
-                                    cv2.line(canvas, (int((x)*200), int((y-0.1)*200)), (int((x+0.1)*200), int((y+0.1)*200)), (255, 255, 255), 2)
-                                    cv2.line(canvas, (int((x)*200), int((y-0.1)*200)), (int((x-0.1)*200), int((y+0.1)*200)), (255, 255, 255), 2)
-                                    cv2.line(canvas, (int((x-0.1)*200), int((y+0.1)*200)), (int((x+0.1)*200), int((y+0.1)*200)), (255, 255, 255), 2)
-                            images.append(canvas)
+                    torch.save([
+                        actor_critic,
+                        getattr(utils.get_vec_normalize(envs), 'obs_rms', None)
+                    ], os.path.join(save_path, config['save_name'] +"_step_"+ str(j) + ".pt"))
                     
-                    width = 4
-                    height = ((obs_copy.shape[0])-1)//width +1
-                    total_canvas = np.zeros((200*width, 200*height,3))
+                    # Upload model weights to GCP
+                    if config['upload_to_gcp']:
+                        blob_model = bucket.blob(f"{self.bucket_blob_dir}/_step_{str(j)}.pt")
+                        blob_model.upload_from_filename(os.path.join(save_path, config['save_name'] +"_step_"+ str(j) + ".pt"))
 
-                    for i in range(len(images)):
-                        x,y = i%width, (i)//width
-                        image = images[i]
-                        total_canvas[x*200:(x+1)*200, y*200:(y+1)*200,] = image
+                if j % config['log_interval'] == 0 and len(episode_rewards) > 1:
+                    total_num_steps = (j + 1) * config['num_processes'] * config['num_steps']
+                    end = time.time()
+                    pbar.set_postfix({"total_num_steps": total_num_steps, "mean_episode_rewards": np.mean(episode_rewards), "min_episode_rewards": np.min(episode_rewards), "max_episode_rewards": np.max(episode_rewards)})
+                    # Write to CSV file
+                    with open(csv_file, mode='a') as file:
+                        writer = csv.writer(file)
+                        writer.writerow([j, total_num_steps, int(total_num_steps / (end - start)), np.mean(episode_rewards), np.median(episode_rewards), np.min(episode_rewards), np.max(episode_rewards), dist_entropy, value_loss, action_loss])
 
-                    cv2.imshow('Environment', total_canvas)
-                    cv2.waitKey(1)
-                    time.sleep(0.1)
+                    # Upload updated CSV to GCP
+                    if config['upload_to_gcp']:
+                        blob.upload_from_filename(csv_file)
 
-            if (config['eval_interval'] is not None and len(episode_rewards) > 1
-                    and j % config['eval_interval'] == 0):
-                evaluate(actor_critic, None, config['env_name'], config['seed'],
-                        config['num_processes']
-                        , eval_log_dir, device)
+                if config['visualize'] and j % config['view_video_interval'] == 0 and len(episode_rewards) > 1:
+                    for i in range(min(len(rollouts.obs),40)):
+                        obs_copy = rollouts.obs[i].cpu().clone().detach().numpy()
+                        images = []
+                        if len(obs_copy.shape) ==4:
+                            obs_copy = rollouts.obs[i].cpu().clone().detach().numpy()
+                            image = None
+                            for k in range (obs_copy.shape[0]):
+                                observation_resized = cv2.resize(obs_copy[0,0,:,:], (200, 200))
+                                observation_resized = cv2.cvtColor(observation_resized, cv2.COLOR_GRAY2RGB)
+                                observation_resized = cv2.rectangle(observation_resized, (0, 0), (200, 200), (0, 0, 255), 2)
+                                images.append(observation_resized)
+
+                        else:
+                            for k in range (obs_copy.shape[0]):
+                                canvas = np.zeros((200, 200,3))
+                                canvas = cv2.rectangle(canvas, (0, 0), (200, 200), (0, 0, 255), 2)
+                                for j in range (obs_copy.shape[1]//2):
+                                    x,y = (obs_copy[k][2*j]+2)/4, (obs_copy[k][2*j+1]+2)/4 
+                                    if j == 0:
+                                        cv2.circle(canvas, (int(x*200), int(y*200)), 20, (255, 255, 255), -1)
+                                    elif j == 1:
+                                        cv2.rectangle(canvas, (int((x-0.1)*200), int((y-0.1)*200)), (int((x+0.1)*200), int((y+0.1)*200)), (255, 255, 255), -1)
+                                    else:
+                                        cv2.line(canvas, (int((x)*200), int((y-0.1)*200)), (int((x+0.1)*200), int((y+0.1)*200)), (255, 255, 255), 2)
+                                        cv2.line(canvas, (int((x)*200), int((y-0.1)*200)), (int((x-0.1)*200), int((y+0.1)*200)), (255, 255, 255), 2)
+                                        cv2.line(canvas, (int((x-0.1)*200), int((y+0.1)*200)), (int((x+0.1)*200), int((y+0.1)*200)), (255, 255, 255), 2)
+                                images.append(canvas)
+                        
+                        width = 4
+                        height = ((obs_copy.shape[0])-1)//width +1
+                        total_canvas = np.zeros((200*width, 200*height,3))
+
+                        for i in range(len(images)):
+                            x,y = i%width, (i)//width
+                            image = images[i]
+                            total_canvas[x*200:(x+1)*200, y*200:(y+1)*200,] = image
+
+                        cv2.imshow('Environment', total_canvas)
+                        cv2.waitKey(1)
+                        time.sleep(0.1)
+
+                if (config['eval_interval'] is not None and len(episode_rewards) > 1
+                        and j % config['eval_interval'] == 0):
+                    evaluate(actor_critic, None, config['env_name'], config['seed'],
+                            config['num_processes']
+                            , eval_log_dir, device)
 
 if __name__ == "__main__":
     with open('config.yaml', 'r') as file:
