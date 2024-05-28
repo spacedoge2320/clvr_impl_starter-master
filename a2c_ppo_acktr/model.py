@@ -197,12 +197,12 @@ class CNNBase(NNBase):
                                constant_(x, 0), nn.init.calculate_gain('relu'))
 
         self.main = nn.Sequential(
-            init_(nn.Conv2d(1, 1, 3, stride=2,padding=1)), nn.ReLU(),
-            init_(nn.Conv2d(1, 4, 4, stride=2,padding=1)), nn.ReLU(),
-            init_(nn.Conv2d(4, 8, 4, stride=2,padding=1)), nn.ReLU(),
-            init_(nn.Conv2d(8, 16, 4, stride=2,padding=1)), nn.ReLU(),
-            init_(nn.Conv2d(16, 32, 4, stride=2,padding=1)), nn.ReLU(),
-            init_(nn.Conv2d(32, 64, 4, stride=1,padding=0)), nn.ReLU(), Flatten())
+            init_(nn.Conv2d(1, 4, 3, stride=2,padding=0)), nn.ReLU(),
+            init_(nn.Conv2d(4, 8, 3, stride=2,padding=0)), nn.ReLU(),
+            init_(nn.Conv2d(8, 16, 3, stride=2,padding=0)), nn.ReLU(),
+            init_(nn.Conv2d(16, 32, 3, stride=2,padding=0)), nn.ReLU(),
+            init_(nn.Conv2d(32, 64, 3, stride=1,padding=0)), nn.ReLU(), Flatten())
+        self.fc = nn.Linear(64, 64)
         
         init_ = lambda m: init(m, nn.init.orthogonal_, lambda x: nn.init.
                                constant_(x, 0), np.sqrt(2))
@@ -220,6 +220,8 @@ class CNNBase(NNBase):
     def forward(self, inputs, rnn_hxs, masks):
         #print(f"inputs: {inputs.shape}")
         x = self.main(inputs / 255.0)
+        #print(f"x: {x.shape}")
+        x = torch.relu(self.fc(x))
 
         if self.is_recurrent:
             x, rnn_hxs = self._forward_gru(x, rnn_hxs, masks)
