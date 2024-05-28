@@ -205,7 +205,7 @@ def main(args):
                 writer.writerow([j, total_num_steps, int(total_num_steps / (end - start)), np.mean(episode_rewards), np.median(episode_rewards), np.min(episode_rewards), np.max(episode_rewards), dist_entropy, value_loss, action_loss])
             
        
-        if j % args.view_video_interval == 0 and len(episode_rewards) > 1:
+        if False & j % args.view_video_interval == 0 and len(episode_rewards) > 1:
             for i in range(min(len(rollouts.obs),40)):
                 obs_copy = rollouts.obs[i].cpu().clone().detach().numpy()
                 images = []
