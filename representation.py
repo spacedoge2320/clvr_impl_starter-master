@@ -103,9 +103,9 @@ class FullModel(nn.Module):
     def __init__(self, conditioning_frames=3):
         super(FullModel, self).__init__()
         self.encoder = Encoder()
-        self.mlp = MLP(input_dim=192, hidden_dim=32, output_dim=16)
-        self.predictor = Predictor(input_dim=16, hidden_dim=16)
-        self.reward_head = RewardHead(input_dim=16)
+        self.mlp = MLP(input_dim=192, hidden_dim=32, output_dim=32)
+        self.predictor = Predictor(input_dim=32, hidden_dim=32)
+        self.reward_head = RewardHead(input_dim=32)
         self.decoder = Decoder()
         self.lstm_input_list = []
         self.conditioning_frames = conditioning_frames
@@ -155,13 +155,13 @@ if __name__ == '__main__':
     model.apply(initialize_weights)
     decoder = Decoder().to(device)
     decoder.apply(initialize_weights)
-    model_optimizer = optim.Adam(model.parameters(),  lr=0.00001, betas=(0.9, 0.999))
-    reconstructor_optimizer = optim.Adam(decoder.parameters(),  lr=0.00005, betas=(0.9, 0.999))
+    model_optimizer = optim.Adam(model.parameters(),  lr=0.0001, betas=(0.9, 0.999))
+    reconstructor_optimizer = optim.Adam(decoder.parameters(),  lr=0.0002, betas=(0.9, 0.999))
 
     
     # Load the state dictionaries
     try:
-        checkpoint = torch.load(os.path.join(save_dir, 'checkpoint_epoch_best.pth'))  # Replace X with the specific epoch number
+        checkpoint = torch.load(os.path.join(save_dir, 'checkpoint_epoch_d68.pth'))  # Replace X with the specific epoch number
         model.load_state_dict(checkpoint['model_state_dict'])
         decoder.load_state_dict(checkpoint['decoder_state_dict'])
     except:
@@ -177,7 +177,7 @@ if __name__ == '__main__':
 
         torch_images = torch.stack([torch.tensor(img, dtype=torch.float32).unsqueeze(0) for img in traj.images]).to(device) / 255
         loss_list = []
-        reward_tuple = (np.array(traj.rewards["agent_x"])-np.array(traj.rewards["target_x"]))**2 +(np.array(traj.rewards["agent_y"])-np.array(traj.rewards["target_y"]))**2
+        reward_tuple = np.sqrt((np.array(traj.rewards["agent_x"])-np.array(traj.rewards["target_x"]))**2 +(np.array(traj.rewards["agent_y"])-np.array(traj.rewards["target_y"]))**2)
                
         for timestep in range(0, len(torch_images) - 3 - prediction_horizon):
             model_optimizer.zero_grad()
@@ -189,7 +189,7 @@ if __name__ == '__main__':
             actual_rewards = None
 
             if not torch.all(torch.eq(pred_rewards, torch.zeros_like(pred_rewards))):
-                rewards = np.sqrt(reward_tuple[timestep+3:timestep+3+prediction_horizon])
+                rewards = reward_tuple[timestep+3:timestep+3+prediction_horizon]
                 #print(rewards)
                 # t+3 t+4 t+5 t+6
                 actual_rewards = torch.tensor(rewards, dtype=torch.float32).to(device)
@@ -202,23 +202,26 @@ if __name__ == '__main__':
             reconstruction_loss.backward()
 
             if timestep % 100 == 0:
-                image = decoded_image.squeeze().detach().cpu().numpy()
-                original_image = torch_images[timestep+3].squeeze().detach().cpu().numpy()
-                image = cv2.resize(image, (500, 500))
-                original_image = cv2.resize(original_image, (500, 500))
+                if False:
+                    image = decoded_image.squeeze().detach().cpu().numpy() * 255
+                    original_image = torch_images[timestep+3].squeeze().detach().cpu().numpy() *255
+                    image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+                    original_image = cv2.cvtColor(original_image, cv2.COLOR_GRAY2BGR)
+                    image = cv2.resize(image, (512, 512))
+                    original_image = cv2.resize(original_image, (512, 512))
 
-                if actual_rewards is not None:
-                    pred_rewards = pred_rewards.cpu().clone().detach().numpy()
-                    x = int(pred_rewards[0]*500)
-                    #print(x)
-                    #cv2.line(original_image, (x, 0), (x, 500), (255, 0, 0), 1)
+                    if actual_rewards is not None:
+                        pred_rewards = pred_rewards.cpu().clone().detach().numpy()
+                        x = int(pred_rewards[0]*500)
+                        #print(x)
+                        #cv2.line(original_image, (x, 0), (x, 500), (255, 0, 0), 1)
 
-                stacked_image = np.hstack((image, original_image))
-                cv2.imshow("Reconstructed Image", stacked_image)
-                cv2.waitKey(1)
-                if cv2.waitKey(1) & 0xFF == ord('q'):
-                    cv2.destroyAllWindows()
-                    break
+                    stacked_image = np.hstack((image, original_image))
+                    cv2.imshow("Reconstructed Image", stacked_image)
+                    cv2.waitKey(1)
+                    if cv2.waitKey(1) & 0xFF == ord('q'):
+                        cv2.destroyAllWindows()
+                        break
                 print(f"Epoch {epoch}, timestep {timestep}, model_loss: {reward_loss}, reconstructor_loss: {reconstruction_loss}")
 
             model_optimizer.step()

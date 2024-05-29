@@ -42,7 +42,7 @@ class RL_main:
             env = Environment_list[0] + "-v"+str(config['distractors'])
             config['pretrained_encoder'] = True
 
-        current_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
+        current_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
         save_name = architecture + "_v" + str(config['distractors']) + "_"+str(current_time)+"_"+config['log_comment']
         config['save_name'] = save_name
@@ -87,6 +87,8 @@ class RL_main:
         if config['mps'] ==1 and torch.backends.mps.is_available():
             device = torch.device('mps')
             print("Using MPS")
+            
+        print(f"Training start: {config['save_name']}")
         
         log_dir = os.path.expanduser(config['log_dir'])
         eval_log_dir = log_dir + "_eval"
