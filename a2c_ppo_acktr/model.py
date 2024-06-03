@@ -13,7 +13,7 @@ class Flatten(nn.Module):
 
 
 class Policy(nn.Module):
-    def __init__(self, obs_shape, action_space, base=None, base_kwargs=None, pretrained_extractor=False):
+    def __init__(self, obs_shape, action_space, base=None, base_kwargs=None, pretrained_extractor=False, Mode="original"):
         super(Policy, self).__init__()
         if base_kwargs is None:
             base_kwargs = {}
@@ -22,12 +22,18 @@ class Policy(nn.Module):
             if pretrained_extractor:
                 self.pretrained_extractor = True
                 base = Pretrained_Base
-                self.feature_extractor = Encoder()
-                for param in self.feature_extractor.parameters():
-                    param.requires_grad = False
+                if Mode == "original":
+                    self.feature_extractor = Encoder_original()
+                else:
+                    self.feature_extractor = Encoder_modified()
+                #for param in self.feature_extractor.parameters():
+                    #param.requires_grad = False
                 self.base = base((64), **base_kwargs)
             elif len(obs_shape) == 3:
-                base = CNNBase
+                if Mode == "original":
+                    base = CNNBase_original
+                else:
+                    base = CNNBase_modified
                 self.base = base(obs_shape[0], **base_kwargs)
             elif len(obs_shape) == 1:
                 base = MLPBase
@@ -189,9 +195,37 @@ class NNBase(nn.Module):
 
 
 
-class CNNBase(NNBase):
+class CNNBase_modified(NNBase):
+    def __init__(self, num_inputs, recurrent=False, hidden_size=128):
+        super(CNNBase_modified, self).__init__(recurrent, hidden_size, hidden_size)
+
+        init_ = lambda m: init(m, nn.init.orthogonal_, lambda x: nn.init.
+                               constant_(x, 0), nn.init.calculate_gain('relu'))
+
+        self.main = nn.Sequential(
+            init_(nn.Conv2d(num_inputs, 8, 5, stride=2, padding=2)), nn.ReLU(),
+            init_(nn.Conv2d(8, 16, 3, stride=2, padding=1)), nn.ReLU(),
+            init_(nn.Conv2d(16, 8, 3, stride=2, padding=1)), nn.ReLU(), Flatten(),
+            init_(nn.Linear(8 * 8 * 8, hidden_size)), nn.ReLU())
+
+        init_ = lambda m: init(m, nn.init.orthogonal_, lambda x: nn.init.
+                               constant_(x, 0))
+
+        self.critic_linear = init_(nn.Linear(hidden_size, 1))
+
+        self.train()
+
+    def forward(self, inputs, rnn_hxs, masks):
+        x = self.main(inputs / 255.0)
+
+        if self.is_recurrent:
+            x, rnn_hxs = self._forward_gru(x, rnn_hxs, masks)
+
+        return self.critic_linear(x), x, rnn_hxs
+    
+class CNNBase_original(NNBase):
     def __init__(self, num_inputs, recurrent=False, hidden_size=64):
-        super(CNNBase, self).__init__(recurrent, hidden_size, hidden_size)
+        super(CNNBase_original, self).__init__(recurrent, hidden_size, hidden_size)
 
         init_ = lambda m: init(m, nn.init.orthogonal_, lambda x: nn.init.
                                constant_(x, 0), nn.init.calculate_gain('relu'))
@@ -268,9 +302,9 @@ class MLPBase(NNBase):
 
     
 
-class Encoder(nn.Module):
+class Encoder_original(nn.Module):
     def __init__(self):
-        super(Encoder, self).__init__()
+        super(Encoder_original, self).__init__()
         self.conv1 = nn.Conv2d(1, 4, kernel_size=4, stride=2, padding=1)
         self.conv2 = nn.Conv2d(4, 8, kernel_size=4, stride=2, padding=1)
         self.conv3 = nn.Conv2d(8, 16, kernel_size=4, stride=2, padding=1)
@@ -288,6 +322,25 @@ class Encoder(nn.Module):
         x = self.fc(x)
         return x
     
+class Encoder_modified(nn.Module):
+    def __init__(self):
+        super(Encoder_original, self).__init__()
+        self.conv1 = nn.Conv2d(1, 4, kernel_size=4, stride=2, padding=1)
+        self.conv2 = nn.Conv2d(4, 8, kernel_size=4, stride=2, padding=1)
+        self.conv3 = nn.Conv2d(8, 16, kernel_size=4, stride=2, padding=1)
+        self.conv4 = nn.Conv2d(16, 32, kernel_size=4, stride=2, padding=1)
+        self.conv5 = nn.Conv2d(32, 64, kernel_size=4, stride=1, padding=0)
+        self.fc = nn.Linear(64*1*1, 64)
+
+    def forward(self, x):
+        x = torch.relu(self.conv1(x))
+        x = torch.relu(self.conv2(x))
+        x = torch.relu(self.conv3(x))
+        x = torch.relu(self.conv4(x))
+        x = torch.relu(self.conv5(x))
+        x = x.view(x.size(0), -1)
+        x = self.fc(x)
+        return x   
 
 class Pretrained_Base(NNBase):
     def __init__(self, num_inputs, recurrent=False, hidden_size=64):

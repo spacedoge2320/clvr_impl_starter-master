@@ -44,7 +44,7 @@ class RL_main:
 
         current_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
-        save_name = architecture + "_v" + str(config['distractors']) + "_"+str(current_time)+"_"+config['log_comment']
+        save_name = architecture + "_" +config['architecture_mode']+"_v" + str(config['distractors']) + "_"+str(current_time)+"_"+config['log_comment']
         config['save_name'] = save_name
         config['env_name'] = env
 
@@ -103,7 +103,7 @@ class RL_main:
         actor_critic = Policy(
             envs.observation_space.shape,
             envs.action_space,
-            base_kwargs={'recurrent': config['recurrent_policy']}, pretrained_extractor=config['pretrained_encoder'])
+            base_kwargs={'recurrent': config['recurrent_policy']}, pretrained_extractor=config['pretrained_encoder'], Mode=config['architecture_mode'])
         actor_critic.to(device)
 
         if config['pretrained_encoder']:
@@ -114,7 +114,7 @@ class RL_main:
         agent = algo.PPO(
             actor_critic,
             config['clip_param'],
-            config['ppo_epoch'],
+            int(config['ppo_epoch']),
             config['num_mini_batch'],
             config['value_loss_coef'],
             config['entropy_coef'],
@@ -156,6 +156,29 @@ class RL_main:
             # Upload config to GCP
             blob_config = bucket.blob(f"{self.bucket_blob_dir}/settings.yaml")
             blob_config.upload_from_string(config_yaml)
+
+        if config['upload_to_gcp_batch']:
+            self.bucket_blob_dir = f"batch_runs/{config['batch']}/{[config['package_no']]}/{config['save_name']}"
+            gcp_key = config['gcp_key']
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"]=gcp_key
+            storage_client = storage.Client()
+            bucket = storage_client.bucket(config['gcp_bucket_name'])
+            blob = bucket.blob(f"{self.bucket_blob_dir}/train_log.csv")
+            blob.upload_from_filename(csv_file)
+            # Reparse config to yaml
+            config_yaml = yaml.dump(config)
+
+            # Upload config to GCP
+            blob_config = bucket.blob(f"{self.bucket_blob_dir}/settings.yaml")
+            blob_config.upload_from_string(config_yaml)
+
+            # Open a text file
+            with open('a2c_ppo_acktr/model.py', 'r') as file:
+                data = file.read()
+            # Upload the file to GCP
+            blob_code = bucket.blob(f"{self.bucket_blob_dir}/model.py")
+            blob_code.upload_from_string(data)
+            
 
 
 
@@ -229,7 +252,7 @@ class RL_main:
                 ], os.path.join(save_path, config['save_name'] +"_step_"+ str(j) + ".pt"))
                 
                 # Upload model weights to GCP
-                if config['upload_to_gcp']:
+                if config['upload_to_gcp'] or config['upload_to_gcp_batch']:
                     blob_model = bucket.blob(f"{self.bucket_blob_dir}/_step_{str(j)}.pt")
                     blob_model.upload_from_filename(os.path.join(save_path, config['save_name'] +"_step_"+ str(j) + ".pt"))
 
@@ -249,7 +272,7 @@ class RL_main:
                     writer.writerow([j, total_num_steps, int(total_num_steps / (end - start)), np.mean(episode_rewards), np.median(episode_rewards), np.min(episode_rewards), np.max(episode_rewards), dist_entropy, value_loss, action_loss])
 
                 # Upload updated CSV to GCP
-                if config['upload_to_gcp']:
+                if config['upload_to_gcp'] or config['upload_to_gcp_batch']:
                     blob.upload_from_filename(csv_file)
 
             if config['visualize'] and j % config['view_video_interval'] == 0 and len(episode_rewards) > 1:
@@ -301,10 +324,7 @@ class RL_main:
                         , eval_log_dir, device)
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        config_path = "config.yaml"
-        print("Using default config file: config.yaml")
-    config_path = sys.argv[1]
+    config_path = "config.yaml"
 
     with open(config_path, 'r') as file:
         config = yaml.safe_load(file)

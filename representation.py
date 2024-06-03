@@ -66,11 +66,12 @@ class Predictor(nn.Module):
         h0 = torch.zeros(1, x.size(0), self.hidden_dim).to(x.device)
         c0 = torch.zeros(1, x.size(0), self.hidden_dim).to(x.device)
         out, _ = self.lstm(x, (h0, c0))
-        return out
+        return out[:, -1, :]  # 마지막 타임스텝의 출력만 사용
 
 class Decoder(nn.Module):
     def __init__(self):
         super(Decoder, self).__init__()
+        self.fc = nn.Linear(64, 64)
         self.deconv1 = nn.ConvTranspose2d(64, 32, kernel_size=4, stride=1, padding=0)
         self.deconv2 = nn.ConvTranspose2d(32, 16, kernel_size=4, stride=2, padding=1)
         self.deconv3 = nn.ConvTranspose2d(16, 8, kernel_size=4, stride=2, padding=1)
@@ -78,7 +79,10 @@ class Decoder(nn.Module):
         self.deconv5 = nn.ConvTranspose2d(4, 1, kernel_size=4, stride=2, padding=1)
 
     def forward(self, x):
-        x = x.view(64, 1, 1)
+        x = x.view(1,64)
+        #print(x.shape)
+        x = torch.relu(self.fc(x))
+        x = x.view(64,1,1)
         x = torch.relu(self.deconv1(x))
         x = torch.relu(self.deconv2(x))
         x = torch.relu(self.deconv3(x))
@@ -155,17 +159,14 @@ if __name__ == '__main__':
     model.apply(initialize_weights)
     decoder = Decoder().to(device)
     decoder.apply(initialize_weights)
-    model_optimizer = optim.Adam(model.parameters(),  lr=0.0001, betas=(0.9, 0.999))
+    model_optimizer = optim.Adam(model.parameters(),  lr=0.00002, betas=(0.9, 0.999))
     reconstructor_optimizer = optim.Adam(decoder.parameters(),  lr=0.0002, betas=(0.9, 0.999))
 
     
-    # Load the state dictionaries
-    try:
-        checkpoint = torch.load(os.path.join(save_dir, 'checkpoint_epoch_d68.pth'))  # Replace X with the specific epoch number
-        model.load_state_dict(checkpoint['model_state_dict'])
-        decoder.load_state_dict(checkpoint['decoder_state_dict'])
-    except:
-        print("Error loading model weights")
+    #Load the state dictionaries
+    checkpoint = torch.load(os.path.join(save_dir, 'checkpoint_epoch_99.pth'),map_location=torch.device('cpu'))  # Replace X with the specific epoch number
+    model.load_state_dict(checkpoint['model_state_dict'])
+    decoder.load_state_dict(checkpoint['decoder_state_dict'])
 
     reconstruction_loss_fn = nn.MSELoss()
     reward_loss_fn = nn.MSELoss()
@@ -202,7 +203,7 @@ if __name__ == '__main__':
             reconstruction_loss.backward()
 
             if timestep % 100 == 0:
-                if False:
+                if True:
                     image = decoded_image.squeeze().detach().cpu().numpy() * 255
                     original_image = torch_images[timestep+3].squeeze().detach().cpu().numpy() *255
                     image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
